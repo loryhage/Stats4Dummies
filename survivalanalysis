@@ -97,26 +97,36 @@ df.to_excel(path+r'tables/data_survival.xlsx')
 
 """Kaplan Meier survival analysis"""
 
-# Create a function for KM curves and Log-rank results
+# Create a function of KM curve
 
 def kaplan_curves (df, timetoevent, status, event, x, y, label_x, label_y) :
     # status is the variable analysed ; x is the data of group 1 (text or number) ; y is the data of group 2 (text or number)
     # label_x is the label of group 1 (text) ; label_y is the label of group 2 (text)
+    
+    # fix size of plots
     fig, ax = subplots(figsize=(8,8))
     
+    # fit curve of group 1
     f1 = KaplanMeierFitter()
     f1.fit(df[timetoevent][df[status]== x], df[event][df[status]== x])    
     f1.plot(label= label_x, ax=ax, show_censors=True, censor_styles={'ms': 5, 'marker': '|'} , color='#0a2883', ci_alpha=0.1)
+    
+    # fit curve of group 2
     f2 = KaplanMeierFitter()
     f2.fit(df[timetoevent][df[status]== y], df[event][df[status]== y])    
     f2.plot(ax=ax, label=label_y, show_censors=True, censor_styles={'ms': 5, 'marker': '|'}  , color='#809fff', ci_alpha=0.1)
     
+    # fix legend position
+    ax.legend(loc='upper right', fontsize=12, frameon=False)
+    
+    # format plots and add labels/titles
     plt.xlabel("Time to Event (years)", **{'fontname':'Arial'},**{'fontsize':14})
     plt.ylabel("Survival Probability", **{'fontname':'Arial'},**{'fontsize':14})
     plt.xticks(**{'fontname':'Arial'}, **{'fontsize':12})
     plt.yticks(**{'fontname':'Arial'}, **{'fontsize':12})
     plt.axhline(0.5, color='black', linestyle='--', label='50% Survival')
     
+    # add number of events under curves
     add_at_risk_counts(f1, f2,labels=[x+' group', y+' group'], 
                        **{'fontname':'Arial'}, **{'fontsize':12}, **{'horizontalalignment':'center'},
                        ax=ax, fig=fig)
@@ -130,7 +140,6 @@ def kaplan_curves (df, timetoevent, status, event, x, y, label_x, label_y) :
                                by_inter[x][event],
                                by_inter[y][event])
     return plt.tight_layout(), f1, f2, log_results.summary
-
 # Create a function that uses KM function for each type of event
 
 def survival_curves (data, LOCF) :
