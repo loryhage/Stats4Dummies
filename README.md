@@ -1,4 +1,4 @@
-Statiscal analyses code that I wrote on Python for scientific projects
+Statiscal analyses code for dummies on Python written for scientific projects
 
 Includes :
 - Descriptive stats
