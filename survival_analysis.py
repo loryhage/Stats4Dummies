@@ -185,71 +185,81 @@ survival_results = survival_curves(df, LOCF_med)
 
 """Cox proportional hazards regression model"""
 
-#Dataframe to include in analysis : impute missing data
-
-# Convert variable into binary results and add into column
+# Create binary column of intervention type 
+# group1 = 0 and group2 = 1
 df['status'] = np.where(
-    df['group_variable'] == 'group1',
+    df['intervention'] == 'group2', 
     1,
-    0)
+    0) 
 
-# Define variables to include in univariate and multivariate analyses
-variables = ['event','x', 'y', 'z']
+# Determine variables to include in Cox regression
+variables = [
+            'x', 'y', 'z', # dependant variables
+            'status', # independant variable
+            'event_type1', 'timetoevent_event_type1','event_type2', 'timetoevent_event_type2' # for the different types of survival analyses
+             ]
 
+# Determine dataframe to include in Cox regression
 inter_df = df[variables]
 model_df = MS(variables, intercept=False).fit_transform(inter_df)
 
-#Impute missing data
+#Create a function to impute missing data in dataframe for Cox regression
 def impute_data(df):
     df_imp = pd.DataFrame.copy(df)
     for col in list(df.columns):
         mean_col = df[col].mean()
         df_imp = df_imp.fillna(value = {col : mean_col})
-    return df_imp, df_imp.isnull().sum()
+        #check variables for missing data
+        print (df_imp.isnull().sum())
+    return df_imp
 
-    #use impute function
-imputed_df = impute_data(model_df)[0]
-    #check variables for missing data
-imputed_df.isnull().sum()
+def Cox_regression (df, variables, outcome) :
+    # Get dataframe for Cox model
+    df_imp = impute_data(df)
     
-"""univariate HR"""
-
-covariates = [x for x in variables if x != 'timetoevent' and x !='event']
-
-uni_results = []
-for var in covariates :
+    # Define variables to add in model
+    covariates = [x for x in variables if x != 'timetoevent_'+outcome and x != outcome]
+    
+    # Calculate univariate HRs
+    uni_results = []
+    for var in covariates :
+        cph = CoxPHFitter
+        subset = df_imp[[var, 'timetoevent_'+outcome, outcome]]
+        uni_results += [cph(penalizer=0.1).fit(subset, duration_col='timetoevent_'+outcome, event_col=outcome)]
+    summary = []
+    for uni_HR in uni_results : 
+        summary += [uni_HR.summary]
+      
+    # Combine the results into a single DataFrame
+    univariate_results = pd.concat(summary) # output : exp(coef) = HR with CI 95% = exp(coef) lower 95% and exp(coef) upper 95%
+    univariate_results.to_excel(path+r'tables/Cox_univariate_'+outcome+'.xlsx')
+    
+    # Calculate multivariate HRs  
     cph = CoxPHFitter
-    subset = imputed_df[[var, 'timetoevent', 'event']]
-    uni_results += [cph(penalizer=0.1).fit(subset, duration_col='timetoevent', event_col='event')]
-summary = []
-for uni_HR in uni_results : 
-    summary += [uni_HR.summary]
-  
-# Combine the results into a single DataFrame
-univariate_summary = pd.concat(summary)
-univariate_summary.to_excel(path+r'tables/Cox_univariate.xlsx')
-
-"""multivariate HR"""
-
-cph = CoxPHFitter
-cox_fit = cph(penalizer=0.1).fit(imputed_df,'timetoevent','event')
-
-results = pd.DataFrame(cox_fit.summary) # output corresponds to : exp(coef) = HR with CI 95% = exp(coef) lower 95% and exp(coef) upper 95%
-# export into excel sheet
-results.to_excel(path+r'tables/Cox_multivariate.xlsx')
-
-    # Plot adjusted curves
-plt.subplots(figsize=(10, 6))
-cox_fit.plot()
-plt.tight_layout()
-plt.savefig(path+r'figures/CoxHR.png', dpi=300)
-
-    # Plot partial effects on outcome (Cox-PH Regression)
+    cox_fit = cph(penalizer=0.1).fit(df_imp,'timetoevent_'+outcome, outcome)
     
-cox_fit.plot_partial_effects_on_outcome(covariates = 'status', values = [1,0], cmap = 'tab20', plot_baseline=False)
-plt.xlabel("Time to Event (years)", **{'fontname':'Arial'},**{'fontsize':12})
-plt.ylabel("Survival Probability", **{'fontname':'Arial'},**{'fontsize':12})
-plt.xticks(**{'fontname':'Arial'}, **{'fontsize':10})
-plt.yticks(**{'fontname':'Arial'}, **{'fontsize':10})
+    # Combine the results into a single DataFrame
+    multivariate_results = pd.DataFrame(cox_fit.summary) # output : exp(coef) = HR with CI 95% = exp(coef) lower 95% and exp(coef) upper 95%
+    multivariate_results.to_excel(path+r'tables/Cox_multivariate_'+outcome+'.xlsx')
 
-plt.savefig(path+r'figures/Cox_intervention.png', dpi=600)
+    # Plot HR multivariate results
+    plt.subplots(figsize=(10, 6))
+    cox_fit.plot()
+    plt.tight_layout()
+    plt.savefig(path+r'figures/CoxHR'+outcome+'.png', dpi=300)
+    
+    # Plot partial effects on outcome (Cox-PH Regression)
+    cox_fit.plot_partial_effects_on_outcome(covariates = 'status', values = [1,0], cmap = 'tab20', plot_baseline=False)
+    plt.xlabel("Time to Event (years)", **{'fontname':'Arial'},**{'fontsize':12})
+    plt.ylabel("Survival Probability", **{'fontname':'Arial'},**{'fontsize':12})
+    plt.xticks(**{'fontname':'Arial'}, **{'fontsize':10})
+    plt.yticks(**{'fontname':'Arial'}, **{'fontsize':10})
+    
+    plt.savefig(path+r'figures/Cox_intervention'+outcome+'.png', dpi=600)
+
+    return univariate_results, multivariate_results
+
+# Use Cox regression function 
+
+for event_type in ['event_type1', 'event_type2'] :
+    Cox_HR = Cox_regression(inter_df, variables, event_type)
