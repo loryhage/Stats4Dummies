@@ -14,255 +14,225 @@ import numpy as np
 import math
 #stats related
 import scipy.stats as stats
+from scipy.stats import ttest_ind
 import statsmodels.formula.api as smf
 import statsmodels.api as sm
 import scikit_posthocs as sp
 import seaborn as sns
 
+
+"""Importing Data Tables"""
+
+path = "/Users/loryhage/Desktop/Work/Research/1 Uro/Leiomyoma/"
+
+#Import data to dataframe
+data = pd.read_excel (path+r'analysis.xlsx', sheet_name='all') 
+list(data.columns)
+
 """Functions"""
 
-# Convert list into dataframe
-def ls_to_df(ls):
-    new_df = []
-    for df in ls :
-        new_df += [pd.DataFrame(df)]
-    return new_df
+def fisher_test(df, indep_var, dep_var):
+    # indep_var : List of categorical variable names to test 
+    # dep_var: List of binary variable names to test
+    var_pairs = [(indep, dep) for indep in indep_var for dep in dep_var]
+    
+    results = []  
+    for x, y in var_pairs:   
+        # create contingency table with your pivot_table method
+        contingency = df.pivot_table(index=x, columns=y, aggfunc=len).fillna(0).astype(int)
+        # calculate fisher's exact test
+        odds_ratio, p_value = stats.fisher_exact(contingency)
+        # convert results to dataframe
+        results.append({
+            'indep_var': x,
+            'dep_var': y,
+            'odds_ratio': odds_ratio,
+            'p_value': p_value
+        })
+    
+    return pd.DataFrame(results)
 
-# Descriptive data for each group
-def desc_continuous(df, groups):
-    mean = []
-    sem = []
-    for status in groups:
-        #Calculate means and sem of continuous data
-        result1 = []
-        result2 = []
-        for columns in [continuous_var]:
-            result1 += [df[columns][df[groups] == status].mean(axis=0)]
-            result2 += [df[columns][df[groups] == status].sem(axis=0)]
-        mean += [result1]
-        sem += [result2]
+
+def chi2_test(df, dep_var, indep_var):
+        # dep_var: List of dependent ordinal variable names
+        # indep_var : List of ordinal variable names to test 
+        var_pairs = [(indep, dep) for indep in indep_var for dep in dep_var]  
         
-    return mean, sem
+        results = []
+        
+        for x, y in var_pairs:   
+            # create contingency table
+            contingency = pd.crosstab(df[x], df[y]).fillna(0).astype(int)
+            
+            # run chi-square test
+            chi2, p, dof, expected = stats.chi2_contingency(contingency)
+            
+            # convert results to dataframe
+            results.append({
+                'indep_var': x,
+                'dep_var': y,
+                'chi2_stat': chi2,
+                'p_value': p
+            })
+        
+        return pd.DataFrame(results)
 
-"""Comparison of two groups : group1 vs group2"""
 
-# Independant ordinal variables : Chi-square test
+def ttest_mannw(df, group_vars, continuous_vars):
+  
+    # group_var: List of ordinal variable names to test
+    # continuous_var : List of continuous variable names to test
+    var_pairs = [(group_var, cont_var) for group_var in group_vars for cont_var in continuous_vars]
 
-    # Create contingency tables for each variable
-cont = []
-for y in ordinal_var:
-    x = group #dependant variable (binary data)
-    cont += [data[[x, y]].pivot_table(index=x, columns=y, aggfunc=len).fillna(0).copy().astype(int)]
+    results = []
+   
+    # Step 1: Parametric assumption tests: normality and variance equality checks  
+    for var, group_var in var_pairs:
+        groups = df[group_var].dropna().unique()
+        if len(groups) < 2:
+            # Not enough groups to compare
+            results.append({
+                'dep_var': group_var,
+                'indep_var': var,
+                'normality_p': np.nan,
+                'variance_p': np.nan,
+                'test': 'Not enough groups',
+                'statistic': np.nan,
+                'p_value': np.nan
+            })
+            continue
 
-    # Calculate chi-2 test
-Xh_res = []
-for x in cont:
-    Xh_res += [stats.chi2_contingency(x)] #output results: chi2 statistic, p-value, degree of freedom
+        group0 = df[df[group_var] == groups[0]][var].dropna()
+        group1 = df[df[group_var] == groups[1]][var].dropna()
 
-ord_1, ord_2, ord_3 = Xh_res
+        # Normality test on residuals of OLS
+        model = smf.ols(f'{var} ~ C({group_var})', data=df).fit()
+        shapiro_p = stats.shapiro(model.resid)[1]
 
-    # Calculate percentage
-allper_group1 = []
-allper_group2 = []
-for cat in df_col:
-    per_group1 = []
-    per_group2 = []
-    sum_cat = []
-    for row in range(len(cat)):
-        per_group1 += [((cat[0].iloc[row]) / cat[0].sum())*100]
-        per_group2 += [((cat[1].iloc[row]) / cat[1].sum())*100]
-    allper_group1 += [per_group1]
-    allper_group2 += [per_group2]
+        # Variance homogeneity test
+        if shapiro_p > 0.05:
+            var_test = stats.bartlett(group0, group1)
+        else:
+            var_test = stats.levene(group0, group1)
+        var_p = var_test.pvalue
 
-# Create dataframe for count and percentages of ordinal variables
-  # Count
-df_col = []
-for df in cont :
-    df_col += [pd.DataFrame(df).T]
-  # Percentage
-df_per_group1 = []
-for df in allper_group1:
-    df_per_group1 += [pd.DataFrame(df)]
+    # Step 2: Performs t-test if parametric or Mann-Whitney test if non parametric data
+ 
+        # Choose test
+        if shapiro_p > 0.05 and var_p > 0.05:
+            test_name = 't-test'
+            stat, pval = stats.ttest_ind(group0, group1, nan_policy='omit')
+        else:
+            test_name = 'Mann-Whitney'
+            stat, pval = stats.mannwhitneyu(group0, group1, alternative='two-sided')
 
-df_per_inj = []
-for df in allper_group2:
-    df_per_group2 +=[pd.DataFrame(df)]
+        results.append({
+            'dep_var': group_var,
+            'indep_var': var,
+            'normality_p': shapiro_p,
+            'variance_p': var_p,
+            'test': test_name,
+            'statistic': stat,
+            'p_value': pval
+        })
 
-    # Merge percentages into one dataframe
-array = []
-for x in range(len(df_per_no)):
-    array += [[df_per_group1[x], df_per_group2[x]]]
+    return pd.DataFrame(results)
 
-df_per = []
-for df_group1, df_group2 in array:
-    df_per += [pd.merge(df_group1, df_group2, left_index=True, right_index=True)]
 
-per_df = []
-for df in df_per:
-    df.columns = [0, 1]
-    per_df += [pd.DataFrame(df)]
+def anova_kruskal(df, group_vars, continuous_vars):
+    # group_var: List of ordinal variable names to test
+    # continuous_var : List of continuous variable names to test
+    var_pairs = [(group_var, cont_var) for group_var in group_vars for cont_var in continuous_vars]
+    results = []
 
-  # Merge percentages into one dataframe for each variable
-array = []
-for x in range(len(per_df)):
-    array += [[df_col[x], per_df[x]]]
-
-  # Merge count and percentages into one dataframe
-merged_df = []
-for count, percentage in array :
-     merged_df += [pd.concat([count, percentage.set_index(count.index[:len(percentage)])], axis=1)]
-
-  # Create dataframe for each variable
-cat_df = []
-for df in merged_df:
-    df.columns = ['count_0', 'count_1', 'percentage_0', 'percentage_1']
-    cat_df += [pd.DataFrame(df)]
     
-  # Combine all dataframes into one excel and export
-dfs = cat_df
-startrow = 0
-with pd.ExcelWriter(path+r'data/categoricaltable.xlsx') as writer:
-    for df in dfs:
-        df.to_excel(writer, engine="xlsxwriter", startrow=startrow)
-        startrow += (df.shape[0] + 2)
+    for var, group_var in var_pairs:
+        data_sub = df[[group_var, var]].dropna()
+        groups = data_sub[group_var].unique()
+        groups.sort()
+        data_groups = [data_sub[data_sub[group_var] == g][var] for g in groups]
+        # Check if there are at least 2 groups with data
+        non_empty_groups = [g for g in data_groups if len(g) > 0]
+        if len(non_empty_groups) < 2:
+          # Not enough groups to test
+          results.append({
+              'dep_var': group_var,
+              'indep_var': var,
+              'normality_p': np.nan,
+              'variance_p': np.nan,
+              'test': np.nan,
+              'statistic': np.nan,
+              'p_value': np.nan
+          })
+          continue
 
-# Converting categorical data into dataframe
+        # Fit OLS model for residuals normality test
+        model = smf.ols(f'{var} ~ C({group_var})', data=data_sub).fit()
+        shapiro_p = stats.shapiro(model.resid)[1]
+        
+        # Variance homogeneity test: Bartlett if normal residuals, else Levene
+        if shapiro_p > 0.05:
+            var_test = stats.bartlett(*data_groups)
+        else:
+            var_test = stats.levene(*data_groups)
+        var_p = var_test.pvalue
 
-b = {'ordinal_var_1':ord_1.pvalue,'ordinal_var_2': ord_2.pvalue,'ordinale_var_3': ord_3.pvalue}
-cat_p = pd.DataFrame.from_dict(b, orient='index')
-cat_p.columns = ['p-value']
-cat_p = cat_p.fillna(value=np.nan)
-    
-    #missing data
-df_ordinal = pd.DataFrame(ordinal_na)
-df_ordinal.columns = ['missing_count']
-df_ordinal['missing_percentage'] = ordinal_perna
-df_ordinal['p-value'] = cat_p
-df_ordinal.index.names = ['variables']
-
-#to excel
-df_ordinal.to_excel(path+r'data/categorical_missing_pvalue.xlsx')
-
-# Independant continuous variables : t-Test if data is normal, otherwise Mann-Whitney
-
-  # Step 1: checking for normality
-
-  # Create a function to calculate normality
-def normality (df, column):
-    n = smf.ols(column +" ~ C(group)", data= df).fit()
-    shapiro = stats.shapiro(n.resid)
-    return shapiro.pvalue
-
-  # Iterate function on all data
-result = []
-for col in continuous_var :
-    result += [normality(data, col)]
-
-for n in range(len(result)):
-    name = continuous_var
-    if result[n] > 0.05:
-        print(name[n], 'p-value =', result[n],': data is normal')
-    else:
-        print (name[n], 'p-value =', result[n],': data is not normal - use a non parametric test')
-
-  # Create distribution plot
-for cortisol in continuous_var :
-    sns.displot(data, x=cortisol, kind="kde")
-
-  # Step 2: checking variances 
-
-column = continuous_var
-var = []
-for n in range(len(result)):
-    col = data[column[n]].dropna()
-    if result[n] > 0.05:
-        # Bartlett for normal data
-        var += [stats.bartlett(col[data[group] == 1],
-                               col[data[group] == 0])]
-    else:
-        # Levene for non normal data
-        var += [stats.levene(col[data[group] == 1],
-                             col[data[group] == 0])]
-print(var)
-
-variances = []
-for n in range(len(var)):
-    variances += [var[n].pvalue]
+        # Check if all values are identical across all groups (no variance)
+        all_values = np.concatenate(data_groups)
+        if np.all(all_values == all_values[0]):
+            # all identical values, skip test
+            results.append({
+                'dep_var': group_var,
+                'indep_var': var,
+                'normality_p': shapiro_p,
+                'variance_p': var_p,
+                'test': 'No variance',
+                'statistic': np.nan,
+                'p_value': np.nan
+            })
+            continue  
        
-    #all groups have equal variances = homogeneity
-for n in range(len(variances)):
-    col = continuous_var
-    if variances[n] > 0.05:
-        print(col[n],'variances are homogenous')
-    else:
-        print (col[n],'variances are not homogenous - use a non parametric test')
+        # Step 2: Performs anova if parametric or Kruskal-Wallis test if non parametric data
+     
+        # Choose test
+        if shapiro_p > 0.05 and var_p > 0.05:
+            test_name = 'ANOVA'
+            anova_table = sm.stats.anova_lm(model, typ=2)
+            stat = anova_table['F'][0]
+            pval = anova_table['PR(>F)'][0]
+        else:
+            test_name = 'Kruskal-Wallis'
+            stat, pval = stats.kruskal(*data_groups)
+        
+        results.append({
+            'dep_var': group_var,
+            'indep_var': var,
+            'normality_p': shapiro_p,
+            'variance_p': var_p,
+            'test': test_name,
+            'statistic': stat,
+            'p_value': pval
+        })
+        
+    return pd.DataFrame(results)
 
-  # Step 3: parametric and non parametric tests
-    
-  # Mann-Whitney test for non parametric data
 
-M_res = []
-for x in ['nonp_var1','nonp_var2']:
-    M_res += [stats.mannwhitneyu(data[x][data[group] == 0],
-                                 data[x][data[group] == 1], 
-                                 nan_policy='omit')] #returns: statistic, pvalue
-var1, var2 = M_res
+def spearman_corr(df, dep_vars, indep_vars):
+    # dep_var: List of ordinal variable names
+    # indep_var : List of continuous variable names to test
+    var_pairs = [(cont_indep, cont_dep) for cont_indep in indep_vars for cont_dep in dep_vars]
+  
+    results = []
 
-    # T-test for parametric data
-for x in ['par_var1', 'par_var2']:
-    T_res = stats.ttest_ind(data[x][data[group] == 0],
-                           data[x][data[group] == 1],
-                           nan_policy = 'omit') #returns: statistic, pvalue
-var3, var4 = T_res
+    for x, y in var_pairs:
+        corr, pval = stats.spearmanr(df[x], df[y], nan_policy='omit')
+        results.append({
+            'dep_var': x,
+            'indep_var': y,
+            'spearman_corr': corr,
+            'p_value': pval
+        })
 
-  # Add continuous results to dataframe : pvalue
+    return pd.DataFrame(results)
 
-a = {'var1' : var1.pvalue, 'var2' : var2.pvalue, 'var3' : var3.pvalue, 'var4' : var4.pvalue}
-cont_p = pd.DataFrame.from_dict(a, orient='index')
-cont_p.columns = ['p-value']
 
-# Create dataframe with descriptive data
-
-  # Calculate descriptive results (mean, sem) 
-res_continuous =  desc_continuous(data, [0,1])
-
-  # Separate results into variables
-continuous_n = res_continuous[0]
-Group1_cont_m, Group2_cont_m = res_continuous[1]
-Group1_cont_sem, Group2_cont_sem = res_continuous[2]
-
-  # Convert continuous data into dataframe    
-df = ls_to_df([Group1_cont_m, Group2_cont_m]) #mean results
-
-df_result = []
-for dx in df :
-    df_result += [dx.T]
-group1_cont_df, group2_cont_df = df_result
-
-group1_cont_df.columns = ['group1_mean']
-group2_cont_df.columns = ['group2_mean']
-
-df_continuous_m = pd.merge(group1_cont_df, group2_cont_df,left_index=True, right_index=True)
-
-df = ls_to_df([NoInj_cont_sem, Inj_cont_sem]) #SEM results
-
-df_result = []
-for dx in df :
-    df_result += [dx.T]
-group1_cont_df, group2_cont_df = df_result
-
-group1_cont_df.columns = ['group1_sem']
-group2_cont_df.columns = ['group2_sem']
-
-df_continuous_sem = pd.merge(group1_cont_df, group2_cont_df,left_index=True, right_index=True)
-
-  # Merge mean and sem results into one dataframe
-df_continuous = pd.merge(df_continuous_m, df_continuous_sem ,left_index=True, right_index=True)
-
-  # Merge all results in one dataframe
-df = pd.merge(df_continuous_missing, df_continuous, left_index=True, right_index=True, how='outer')
-df_final = pd.merge(df, cont_p,left_index=True, right_index=True, how='outer')
-df_final.index.names = ['variables']
-
-  # Export dataframe to excel
-df_final.to_excel(path+r'data/continuous_table.xlsx')
