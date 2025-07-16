@@ -23,10 +23,10 @@ import seaborn as sns
 
 """Importing Data Tables"""
 
-path = "/Users/loryhage/Desktop/Work/Research/1 Uro/Leiomyoma/"
+path = "pathname"
 
 #Import data to dataframe
-data = pd.read_excel (path+r'analysis.xlsx', sheet_name='all') 
+data = pd.read_excel (path+r'database.xlsx') 
 list(data.columns)
 
 """Functions"""
