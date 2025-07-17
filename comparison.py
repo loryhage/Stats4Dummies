@@ -29,30 +29,84 @@ path = "pathname"
 data = pd.read_excel (path+r'database.xlsx') 
 list(data.columns)
 
-"""Functions"""
 
-def fisher_test(df, indep_var, dep_var):
-    # indep_var : List of categorical variable names to test 
-    # dep_var: List of binary variable names to test
-    var_pairs = [(indep, dep) for indep in indep_var for dep in dep_var]
-    
+"""Calculating descriptive data of groups compared"""
+
+def descriptive_continuous(df, group_col, continuous_vars):
+    results = []
+
+    for var in continuous_vars:
+        for group_val in df[group_col].dropna().unique():
+            subset = df[df[group_col] == group_val][var].dropna()
+            results.append({
+                'dep_var' : group_col,
+                'indep_var': var,
+                'group': group_val,
+                'mean': subset.mean(),
+                'sem': subset.sem()
+            })
+
+    return pd.DataFrame(results)
+
+def descriptive_ordinal(df, group_col, categorical_vars):
+    results = []
+
+    for var in categorical_vars:
+        grouped = df.groupby(group_col)[var].value_counts(dropna=False).unstack(fill_value=0)
+        totals = grouped.sum(axis=1)
+
+        for group_val in grouped.index:
+            for category_val in grouped.columns:
+                count = grouped.loc[group_val, category_val]
+                percent = (count / totals[group_val]) * 100 if totals[group_val] > 0 else np.nan
+
+                results.append({
+                    'dep_var' : group_col,
+                    'group': group_val,
+                    'indep_var': var,
+                    'categories':category_val,
+                    'count': count,
+                    'percent': percent
+                })
+
+    return pd.DataFrame(results)
+
+
+
+"""Statistical Tests"""
+#Comparing binary vs ordinal variable
+def fisher_test(df, dep_var, indep_var):
+    # dep_var: List of dependent binary variable names
+    # indep_var : List of ordinal variable names to test 
+    var_pairs = [(indep, dep) for indep in indep_var for dep in dep_var]  
+     
     results = []  
     for x, y in var_pairs:   
         # create contingency table with your pivot_table method
         contingency = df.pivot_table(index=x, columns=y, aggfunc=len).fillna(0).astype(int)
+        # Check if contingency table is empty or too small for test
+        if contingency.empty or contingency.shape[0] < 2 or contingency.shape[1] < 2:
+        # Not enough data to perform chi-square test
+            results.append({
+                'indep_var': x,
+                'dep_var': y,
+                'stat': np.nan,
+                'p_value': np.nan
+            })
+            continue
         # calculate fisher's exact test
         odds_ratio, p_value = stats.fisher_exact(contingency)
         # convert results to dataframe
         results.append({
             'indep_var': x,
             'dep_var': y,
-            'odds_ratio': odds_ratio,
+            'stat': odds_ratio,
             'p_value': p_value
         })
     
     return pd.DataFrame(results)
 
-
+#Comparing ordinal vs ordinal variables
 def chi2_test(df, dep_var, indep_var):
         # dep_var: List of dependent ordinal variable names
         # indep_var : List of ordinal variable names to test 
@@ -60,9 +114,20 @@ def chi2_test(df, dep_var, indep_var):
         
         results = []
         
-        for x, y in var_pairs:   
+        for x, y in var_pairs:  
             # create contingency table
             contingency = pd.crosstab(df[x], df[y]).fillna(0).astype(int)
+            
+            # Check if contingency table is empty or too small for test
+            if contingency.empty or contingency.shape[0] < 2 or contingency.shape[1] < 2:
+            # Not enough data to perform chi-square test
+                results.append({
+                    'indep_var': x,
+                    'dep_var': y,
+                    'stat': np.nan,
+                    'p_value': np.nan
+                })
+                continue
             
             # run chi-square test
             chi2, p, dof, expected = stats.chi2_contingency(contingency)
@@ -71,17 +136,17 @@ def chi2_test(df, dep_var, indep_var):
             results.append({
                 'indep_var': x,
                 'dep_var': y,
-                'chi2_stat': chi2,
+                'stat': chi2,
                 'p_value': p
             })
         
         return pd.DataFrame(results)
 
-
+#Comparing binary vs continuous variables
 def ttest_mannw(df, group_vars, continuous_vars):
   
-    # group_var: List of ordinal variable names to test
-    # continuous_var : List of continuous variable names to test
+    # group_vars: List of ordinal variable names to test
+    # continuous_vars : List of continuous variable names to test
     var_pairs = [(group_var, cont_var) for group_var in group_vars for cont_var in continuous_vars]
 
     results = []
@@ -96,7 +161,7 @@ def ttest_mannw(df, group_vars, continuous_vars):
                 'indep_var': var,
                 'normality_p': np.nan,
                 'variance_p': np.nan,
-                'test': 'Not enough groups',
+                'test': 'none',
                 'statistic': np.nan,
                 'p_value': np.nan
             })
@@ -138,10 +203,10 @@ def ttest_mannw(df, group_vars, continuous_vars):
 
     return pd.DataFrame(results)
 
-
+#Comparing categorical vs continuous variables
 def anova_kruskal(df, group_vars, continuous_vars):
-    # group_var: List of ordinal variable names to test
-    # continuous_var : List of continuous variable names to test
+    # group_vars: List of ordinal variable names to test
+    # continuous_vars : List of continuous variable names to test
     var_pairs = [(group_var, cont_var) for group_var in group_vars for cont_var in continuous_vars]
     results = []
 
@@ -160,7 +225,7 @@ def anova_kruskal(df, group_vars, continuous_vars):
               'indep_var': var,
               'normality_p': np.nan,
               'variance_p': np.nan,
-              'test': np.nan,
+              'test': 'none',
               'statistic': np.nan,
               'p_value': np.nan
           })
@@ -216,23 +281,6 @@ def anova_kruskal(df, group_vars, continuous_vars):
         
     return pd.DataFrame(results)
 
-
+# Comparing continuous vs continuous variables
 def spearman_corr(df, dep_vars, indep_vars):
-    # dep_var: List of ordinal variable names
-    # indep_var : List of continuous variable names to test
-    var_pairs = [(cont_indep, cont_dep) for cont_indep in indep_vars for cont_dep in dep_vars]
-  
-    results = []
-
-    for x, y in var_pairs:
-        corr, pval = stats.spearmanr(df[x], df[y], nan_policy='omit')
-        results.append({
-            'dep_var': x,
-            'indep_var': y,
-            'spearman_corr': corr,
-            'p_value': pval
-        })
-
-    return pd.DataFrame(results)
-
 
