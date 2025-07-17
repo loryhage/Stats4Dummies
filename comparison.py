@@ -283,4 +283,19 @@ def anova_kruskal(df, group_vars, continuous_vars):
 
 # Comparing continuous vs continuous variables
 def spearman_corr(df, dep_vars, indep_vars):
+    # dep_var: List of ordinal variable names
+    # indep_var : List of continuous variable names to test
+    var_pairs = [(cont_indep, cont_dep) for cont_indep in indep_vars for cont_dep in dep_vars]
+  
+    results = []
 
+    for x, y in var_pairs:
+        corr, pval = stats.spearmanr(df[x], df[y], nan_policy='omit')
+        results.append({
+            'dep_var': x,
+            'indep_var': y,
+            'spearman_corr': corr,
+            'p_value': pval
+        })
+
+    return pd.DataFrame(results)
