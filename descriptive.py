@@ -90,10 +90,15 @@ list(data.columns)
 
 # Define type of variables to include in the analysis
 
-binary_vars = ['var1', 'var2'] # list column names of your binary variables (0,1)
-categorical_vars = ['var3', 'var4'] # list column names of your categorical variables (e.g. clavien-dindo)
-continuous_vars = ['var5', 'var6'] # list column names of your continuous variables (e.g. age)
+def get_variable_types(df, threshold=2, cat_max_unique=10):
+    binary = [col for col in df.columns if df[col].dropna().nunique() == 2]
+    categorical = [col for col in df.columns if threshold < df[col].dropna().nunique() <= cat_max_unique and (pd.api.types.is_object_dtype(df[col]) or pd.api.types.is_numeric_dtype(df[col]))]
+    continuous = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and df[col].dropna().nunique() > cat_max_unique]
+    return binary, categorical, continuous
 
+# Use function to create your different lists of variables
+
+binary_vars, categorical_vars, continuous_vars = get_variable_types(data)
 
 # Descriptive data
     
