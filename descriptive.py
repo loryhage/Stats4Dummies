@@ -1,11 +1,10 @@
 """
-Created on April 06th 2025
-
 Author: Lory H
 
-Purpose: Study population description
+Purpose: Population description (mean, sem or sd, count, percentages)
 
 """
+
 
 import pandas as pd
 from datetime import datetime
@@ -21,14 +20,7 @@ import seaborn as sns
 
 """Functions"""
 
-# Convert list into dataframe
-def ls_to_df(ls):
-    new_df = []
-    for df in ls :
-        new_df += [pd.DataFrame(df)]
-    return new_df
-
-# Calculate missing data
+# Missing data summary
 
 def missing_data(df, variable_list):
     records = []
@@ -50,14 +42,28 @@ def describe_variables(df, variable_list, var_type="ordinal"):
     records = []
 
     for var in variable_list:
-        if var_type == "ordinal":
+        if var_type == "binary":
             count = df[var].sum()
-            percent = (count / len(df)) * 100
+            percent = (count / len(df[var])) * 100
             records.append({
                 'variables': var,
+                'value': 1,
                 'count': count,
                 'percent': percent
             })
+            
+        elif var_type == "categorical":
+            value_counts = df[var].value_counts(dropna=False)
+            total = len(df[var])
+            for val, count in value_counts.items():
+                percent = (count / total) * 100
+                records.append({
+                    'variables': var,
+                    'value': val,
+                    'count': count,
+                    'percent': percent
+                })
+                
         elif var_type == "continuous":
             mean = df[var].mean()
             sem = df[var].sem()
@@ -72,62 +78,49 @@ def describe_variables(df, variable_list, var_type="ordinal"):
     return pd.DataFrame(records)
 
 
-# Descriptive data for each group compared
-def desc_continuous(df, groups):
-    mean = []
-    sem = []
-    for status in groups:
-        #Calculate means and sem of continuous data
-        result1 = []
-        result2 = []
-        for columns in [continuous_var]:
-            result1 += [df[columns][df[groups] == status].mean(axis=0)]
-            result2 += [df[columns][df[groups] == status].sem(axis=0)]
-        mean += [result1]
-        sem += [result2]
-        
-    return mean, sem
+"""Importing your database"""
 
-"""Importing Excel sheets"""
-
-path = "write pathname here"
+#Use path for easier access
+path = "pathname of your file"
 
 #Import data to dataframe
-data = pd.read_excel (path+r'databasefile.xlsx') 
+data = pd.read_excel (path+r'database.xlsx') 
 list(data.columns)
 
 
 # Define type of variables to include in the analysis
-ordinal_var = ['ordinal variable names']
 
-continuous_var = ['continuous variable names']
+binary_vars = ['var1', 'var2'] # list column names of your binary variables (0,1)
+categorical_vars = ['var3', 'var4'] # list column names of your categorical variables (e.g. clavien-dindo)
+continuous_vars = ['var5', 'var6'] # list column names of your continuous variables (e.g. age)
+
+
+# Descriptive data
+    
+    # for binary variables
+binary_df = describe_variables(data, binary_vars, var_type='binary')
+    # for categorical variables
+categorical_df = describe_variables(data, categorical_vars, var_type='categorical')
+    # for continuous variables
+continuous_df = describe_variables(data, continuous_vars, var_type='continuous')
+
+    # combine the results into one dataframe
+summary_df = pd.concat([binary_df, categorical_df, continuous_df])
 
 # Missing data
 
     # calculate missing data and generate dataframes
 results = []
-for var in [ordinal_var, continuous_var]:
+for var in [binary_vars, categorical_vars, continuous_vars]:
     results += [missing_data(data, var)]
 
-missing_ordinal_df, missing_continuous_df = results
+missing_binary_df, missing_categorical_df, missing_continuous_df = results
 
     # combine the results into one dataframe
-missing_df = pd.concat([missing_ordinal_df, missing_continuous_df])
+missing_df = pd.concat([missing_binary_df, missing_categorical_df, missing_continuous_df])
 
+# Merge all dataframe into one according to variable name (column name)
+descriptive_table = pd.merge(summary_df, missing_df, on = 'variables')
 
-# Descriptive data
-
-    # for ordinal variables
-ordinal_summary_df = describe_variables(data, ordinal_var, var_type="ordinal")
-
-    # for continuous variables
-continuous_summary_df = describe_variables(data, continuous_var, var_type="continuous")
-
-    # combine the results into one dataframe
-summary_df = pd.concat([ordinal_summary_df, continuous_summary_df])
-
-
-# Merge all descriptive data into one dataframe 
-descriptive_table1 = pd.merge(missing_df, summary_df, on='variables', how='outer')
-
-
+# Export dataframe into excel
+descriptive_table.to_excel(path+r'results/descriptive_summary.xlsx', index=False)
