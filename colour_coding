@@ -1,0 +1,61 @@
+"""
+Author: Lory H
+
+Purpose: Colour coding according to p-value
+
+"""
+
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font
+
+"""Importing Data Tables"""
+
+path = "pathname"
+
+"""Colour code results with significant results"""
+
+# Load workbook
+wb = load_workbook(path + r'excelfile.xlsx')
+
+# Define red fill and bold red font for significant p values
+red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+bold_red_font = Font(bold=True, color="9C0006")  # Dark red text
+
+# List of sheet names and corresponding p-value column names
+sheet_pval_columns = {
+    'Continuous Tests': 'p_value',
+    'Ordinal Tests': 'p_value'
+}
+for sheet_name, pval_col in sheet_pval_columns.items():
+    if sheet_name not in wb.sheetnames:
+        continue
+    ws = wb[sheet_name]
+    
+    # Find the p_value column index
+    header = [cell.value for cell in ws[1]]
+    if pval_col not in header:
+        continue
+    col_idx = header.index(pval_col) + 1  # Excel is 1-based index
+
+    # Loop through each data row
+    for row in range(2, ws.max_row + 1):
+        cell = ws.cell(row=row, column=col_idx)
+        value = cell.value
+    
+        # Check for None, empty strings, spaces, and NaN
+        if value is None or (isinstance(value, str) and value.strip() == '') or pd.isna(value):
+            continue  # skip empty or NaN cells
+    
+        try:
+            val = float(value)
+            if val < 0.05:
+                for col in range(1, ws.max_column + 1):
+                    cell_to_format = ws.cell(row=row, column=col)
+                    cell_to_format.fill = red_fill
+                    cell_to_format.font = bold_red_font
+        except (TypeError, ValueError):
+            continue
+# Save workbook with updated formatting
+wb.save(path + r'results/statistical_summary.xlsx')
