@@ -23,7 +23,7 @@ from openpyxl.styles import PatternFill, Font
 
 """Importing Excel sheets"""
 
-path = "/Users/loryhage/Desktop/Work/Research/1 Uro/LNthesis/"
+path = "path name"
 
 #Import data to dataframe
 data = pd.read_excel (path+r'database.xlsx', sheet_name='Database') 
@@ -121,13 +121,11 @@ print(binary_vars,categorical_vars,continuous_vars)
 
 # Define your dependant (outcome) and independant (population) variables
 
-data['treated'] = np.where(data['type_of_treatment'] == 0, 0, 1) #0 = SA / 1 = treatment (PR, RT, BT)
-dep_bin = ['treated']
+dep_bin = ['group name']
 
 indep_bin = [col for col in binary_vars if col not in dep_bin]
 indep_cat = categorical_vars
 indep_cont = continuous_vars
-
 
 """Calculate missing data and percentages"""
 
@@ -150,8 +148,8 @@ data_imp, missing_counts = impute_data(data)
 
 
 # Identify significant descriptive variables
-desc_cat = pd.read_excel (path+r'statistical_summary.xlsx', sheet_name='Ordinal Tests') 
-desc_cont = pd.read_excel (path+r'statistical_summary.xlsx', sheet_name='Continuous Tests') 
+desc_cat = categorical test results #from comparison.py outcomes
+desc_cont = continuous test results #from comparison.py outcomes
 
     #print significant variables into a list
 sig_desc = []
