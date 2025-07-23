@@ -14,6 +14,13 @@ import seaborn as sns
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
 
+"""Importing Data Tables"""
+
+path = "pathname"
+
+#Import data to dataframe
+data = pd.read_excel (path+r'analysis.xlsx', sheet_name='all') 
+list(data.columns)
 
 #Description of groups
 def descriptive_continuous(df, group_col, continuous_vars):
